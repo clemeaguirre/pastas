@@ -1,1 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - Foodtruck Mamma Ia</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      getDocs,
+      updateDoc,
+      doc,
+      query,
+      orderBy
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+    const firebaseConfig = {
+      apiKey: "TU_API_KEY",
+      authDomain: "TU_AUTH_DOMAIN",
+      projectId: "TU_PROJECT_ID",
+      storageBucket: "TU_BUCKET",
+      messagingSenderId: "TU_SENDER_ID",
+      appId: "TU_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const pedidoForm = document.getElementById("pedidoForm");
+    const stockForm = document.getElementById("stockForm");
+    const pedidosDiv = document.getElementById("pedidosDiv");
+    const stockDiv = document.getElementById("stockDiv");
+    const resumenDiv = document.getElementById("resumenDiv");
+    let platos = [];
+
+    document.getElementById("agregarPlato").onclick = () => {
+      const pasta = pedidoForm.pasta.value;
+      const tipo = pedidoForm.tipo.value;
+      const salsa = pedidoForm.salsa.value;
+      const extra = pedidoForm.extra.value;
+      platos.push({ pasta, tipo, salsa, extra });
+      mostrarPlatosTemporal();
+      pedidoForm.reset();
+    };
+
+    pedidoForm.onsubmit = async (e) => {
+      e.preventDefault();
+      if (platos.length === 0) return alert("Agrega al menos un plato al pedido.");
+      const timestamp = new Date();
+      const pedido = { platos, timestamp };
+      await addDoc(collection(db, "pedidos"), pedido);
+      for (const plato of platos) {
+        await descontarStock(plato.pasta, plato.tipo);
+      }
+      alert("Pedido registrado correctamente.");
+      platos = [];
+      mostrarPlatosTemporal();
+      cargarPedidos();
+      cargarStock();
+    };
+
+    stockForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const pasta = stockForm.pastaStock.value;
+      const tipo = stockForm.tipoStock.value;
+      const cantidad = parseInt(stockForm.cantidadStock.value);
+      if (isNaN(cantidad) || cantidad < 0) return alert("Cantidad inválida");
+
+      const stockRef = collection(db, "stock");
+      const snapshot = await getDocs(stockRef);
+      let encontrado = false;
+
+      snapshot.forEach(async (docu) => {
+        const data = docu.data();
+        if (data.pasta === pasta && data.tipo === tipo) {
+          await updateDoc(doc(db, "stock", docu.id), { cantidad });
+          encontrado = true;
+          cargarStock();
+        }
+      });
+
+      if (!encontrado) {
+        await addDoc(stockRef, { pasta, tipo, cantidad });
+        cargarStock();
+      }
+
+      stockForm.reset();
+    };
+
+    function mostrarPlatosTemporal() {
+      const lista = document.getElementById("listaPlatos");
+      lista.innerHTML = platos.map((p, i) =>
+        `<li>${i + 1}. ${p.pasta} (${p.tipo}) con ${p.salsa} <em>${p.extra}</em></li>`
+      ).join('');
+    }
+
+    async function descontarStock(pasta, tipo) {
+      const stockRef = collection(db, "stock");
+      const snapshot = await getDocs(stockRef);
+      snapshot.forEach(async (docu) => {
+        const data = docu.data();
+        if (data.pasta === pasta && data.tipo === tipo) {
+          await updateDoc(doc(db, "stock", docu.id), {
+            cantidad: data.cantidad - 1
+          });
+        }
+      });
+    }
+
+    async function cargarPedidos() {
+      pedidosDiv.innerHTML = "<h2 class='text-xl font-bold'>Pedidos recientes</h2>";
+      const q = query(collection(db, "pedidos"), orderBy("timestamp", "desc"));
+      const snapshot = await getDocs(q);
+      let i = 1;
+      const conteo = {};
+      snapshot.forEach(doc => {
+        const p = doc.data();
+        pedidosDiv.innerHTML += `
+          <div class="border p-2 my-2 rounded bg-white shadow">
+            <strong>Pedido #${i++}</strong> - ${new Date(p.timestamp.toDate()).toLocaleTimeString()}<br>
+            <ul>
+              ${p.platos.map(plato => {
+                const clave = \`\${plato.pasta} \${plato.tipo} con \${plato.salsa}\`;
+                conteo[clave] = (conteo[clave] || 0) + 1;
+                return \`<li>- \${clave} <em>\${plato.extra}</em></li>\`;
+              }).join('')}
+            </ul>
+          </div>
+        `;
+      });
+      mostrarResumen(conteo);
+    }
+
+    async function cargarStock() {
+      stockDiv.innerHTML = "<h2 class='text-xl font-bold'>Stock disponible</h2>";
+      const snapshot = await getDocs(collection(db, "stock"));
+      snapshot.forEach(doc => {
+        const s = doc.data();
+        const color = s.tipo === "huevo" ? "bg-yellow-200" : s.tipo === "espinaca" ? "bg-green-200" : "bg-pink-200";
+        stockDiv.innerHTML += `
+          <div class="p-2 my-1 rounded ${color} flex justify-between">
+            ${s.pasta} (${s.tipo}) <strong>${s.cantidad}</strong>
+          </div>
+        `;
+      });
+    }
+
+    function mostrarResumen(conteo) {
+      resumenDiv.innerHTML = "<h2 class='text-xl font-bold'>Platos más pedidos</h2>";
+      const ordenados = Object.entries(conteo).sort((a,b) => b[1] - a[1]);
+      resumenDiv.innerHTML += ordenados.map(([clave, cantidad]) =>
+        `<div class="bg-white p-2 my-1 rounded shadow">${clave}: <strong>${cantidad}</strong></div>`
+      ).join('');
+    }
+
+    cargarPedidos();
+    cargarStock();
+  </script>
+</head>
+<body class="bg-gray-100 p-4">
+  <h1 class="text-3xl font-bold mb-4 text-center">Admin - Foodtruck Mamma Ia 🍝</h1>
+
+  <form id="pedidoForm" class="bg-white p-4 rounded shadow mb-4 max-w-xl mx-auto">
+    <h2 class="text-lg font-bold mb-2">Agregar Pedido</h2>
+    <div class="mb-2">
+      <label class="font-semibold">Pasta:</label>
+      <select name="pasta" class="border p-1 w-full">
+        <option>spaguetti</option>
+        <option>fettuccine</option>
+        <option>pappardelle</option>
+      </select>
+    </div>
+    <div class="mb-2">
+      <label class="font-semibold">Tipo:</label>
+      <select name="tipo" class="border p-1 w-full">
+        <option>huevo</option>
+        <option>espinaca</option>
+        <option>betarraga</option>
+      </select>
+    </div>
+    <div class="mb-2">
+      <label class="font-semibold">Salsa:</label>
+      <select name="salsa" class="border p-1 w-full">
+        <option>pomodoro</option>
+        <option>alfredo champiñón</option>
+        <option>alfredo tocino</option>
+        <option>alfredo queso azul y parmesano</option>
+        <option>all'amatriciana</option>
+        <option>bolognesa</option>
+        <option>bolognesa rosa</option>
+        <option>all'arrabiata</option>
+        <option>all'vodka</option>
+      </select>
+    </div>
+    <div class="mb-2">
+      <label class="font-semibold">Comentario:</label>
+      <input type="text" name="extra" class="border p-1 w-full" placeholder="Ej: sin queso">
+    </div>
+    <div class="flex justify-between items-center">
+      <button type="button" id="agregarPlato" class="bg-green-500 text-white px-4 py-2 rounded">Agregar plato</button>
+      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">Guardar pedido</button>
+    </div>
+  </form>
+
+  <div class="max-w-xl mx-auto bg-white p-4 mb-4 rounded shadow">
+    <h2 class="text-lg font-bold mb-2">Platos del pedido actual</h2>
+    <ul id="listaPlatos" class="list-disc pl-5"></ul>
+  </div>
+
+  <form id="stockForm" class="bg-white p-4 rounded shadow mb-6 max-w-xl mx-auto">
+    <h2 class="text-lg font-bold mb-2">Actualizar stock manualmente</h2>
+    <div class="mb-2">
+      <label>Pasta:</label>
+      <select name="pastaStock" class="border p-1 w-full">
+        <option>spaguetti</option>
+        <option>fettuccine</option>
+        <option>pappardelle</option>
+      </select>
+    </div>
+    <div class="mb-2">
+      <label>Tipo:</label>
+      <select name="tipoStock" class="border p-1 w-full">
+        <option>huevo</option>
+        <option>espinaca</option>
+        <option>betarraga</option>
+      </select>
+    </div>
+    <div class="mb-2">
+      <label>Cantidad:</label>
+      <input type="number" name="cantidadStock" class="border p-1 w-full">
+    </div>
+    <button type="submit" class="bg-purple-600 text-white px-4 py-2 rounded">Actualizar stock</button>
+  </form>
+
+  <div id="stockDiv" class="max-w-xl mx-auto mb-6"></div>
+  <div id="pedidosDiv" class="max-w-xl mx-auto"></div>
+  <div id="resumenDiv" class="max-w-xl mx-auto mt-6"></div>
+</body>
+</html>
