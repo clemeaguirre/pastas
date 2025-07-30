@@ -1,0 +1,186 @@
+<!-- Guarda esto como admin/index.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - Foodtruck Mamma Ia</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      getDocs,
+      updateDoc,
+      doc,
+      query,
+      orderBy
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBbHm2PnBGChH_1b3cDIkWRDFRX0uuKlHQ",
+      authDomain: "pastas-da599.firebaseapp.com",
+      projectId: "pastas-da599",
+      storageBucket: "pastas-da599.firebasestorage.app",
+      messagingSenderId: "873860893269",
+      appId: "1:873860893269:web:0ba848422e2068c076e2dc"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const pedidoForm = document.getElementById("pedidoForm");
+    const pedidosDiv = document.getElementById("pedidosDiv");
+    const stockDiv = document.getElementById("stockDiv");
+    let platos = [];
+
+    document.getElementById("agregarPlato").onclick = () => {
+      const pasta = pedidoForm.pasta.value;
+      const tipo = pedidoForm.tipo.value;
+      const salsa = pedidoForm.salsa.value;
+      const extra = pedidoForm.extra.value;
+      platos.push({ pasta, tipo, salsa, extra });
+      mostrarPlatosTemporal();
+      pedidoForm.reset();
+    };
+
+    pedidoForm.onsubmit = async (e) => {
+      e.preventDefault();
+      if (platos.length === 0) return alert("Agrega al menos un plato al pedido.");
+      const timestamp = new Date();
+      const precioPlato = parseInt(document.getElementById("precioPlato").value || 0);
+      const productoExtra = document.getElementById("extraProducto").value;
+      const precioExtra = parseInt(document.getElementById("precioExtra").value || 0);
+      const total = (platos.length * precioPlato) + precioExtra;
+
+      const pedido = {
+        platos,
+        timestamp,
+        total,
+        productoExtra,
+        precioExtra
+      };
+
+      await addDoc(collection(db, "pedidos"), pedido);
+      for (const plato of platos) {
+        await descontarStock(plato.pasta, plato.tipo);
+      }
+
+      alert("Pedido registrado correctamente.");
+      platos = [];
+      mostrarPlatosTemporal();
+      calcularTotal();
+      cargarPedidos();
+      cargarStock();
+    };
+
+    function mostrarPlatosTemporal() {
+      const lista = document.getElementById("listaPlatos");
+      lista.innerHTML = platos.map((p, i) =>
+        `<li>${i + 1}. ${p.pasta} (${p.tipo}) con ${p.salsa} <em>${p.extra}</em></li>`
+      ).join('');
+    }
+
+    async function descontarStock(pasta, tipo) {
+      const stockRef = collection(db, "stock");
+      const snapshot = await getDocs(stockRef);
+      snapshot.forEach(async (docu) => {
+        const data = docu.data();
+        if (data.pasta === pasta && data.tipo === tipo) {
+          await updateDoc(doc(db, "stock", docu.id), {
+            cantidad: data.cantidad - 1
+          });
+        }
+      });
+    }
+
+    async function cargarPedidos() {
+      pedidosDiv.innerHTML = "<h2 class='text-xl font-bold'>Pedidos recientes</h2>";
+      const q = query(collection(db, "pedidos"), orderBy("timestamp", "desc"));
+      const snapshot = await getDocs(q);
+      snapshot.forEach((doc, i) => {
+        const p = doc.data();
+        pedidosDiv.innerHTML += `
+          <div class="border p-2 my-2 rounded bg-white shadow">
+            <strong>Pedido</strong> - ${new Date(p.timestamp.toDate()).toLocaleTimeString()}<br>
+            <ul>
+              ${p.platos.map(plato =>
+                `<li>- ${plato.pasta} ${plato.tipo} con ${plato.salsa} <em>${plato.extra}</em></li>`
+              ).join('')}
+            </ul>
+            ${p.productoExtra ? `<p>Extra: ${p.productoExtra} - $${p.precioExtra}</p>` : ""}
+            <p class="font-bold">Total: $${p.total.toLocaleString("es-CL")}</p>
+          </div>
+        `;
+      });
+    }
+
+    async function cargarStock() {
+      stockDiv.innerHTML = "<h2 class='text-xl font-bold'>Stock disponible</h2>";
+      const snapshot = await getDocs(collection(db, "stock"));
+      snapshot.forEach(doc => {
+        const s = doc.data();
+        const color = s.tipo === "huevo" ? "bg-yellow-200" : s.tipo === "espinaca" ? "bg-green-200" : "bg-pink-200";
+        stockDiv.innerHTML += `
+          <div class="p-2 my-1 rounded ${color} flex justify-between">
+            ${s.pasta} (${s.tipo}) <strong>${s.cantidad}</strong>
+          </div>
+        `;
+      });
+    }
+
+    function calcularTotal() {
+      const precioPlato = parseInt(document.getElementById("precioPlato").value || 0);
+      const precioExtra = parseInt(document.getElementById("precioExtra").value || 0);
+      const total = (platos.length * precioPlato) + precioExtra;
+      document.getElementById("totalPedido").innerText = "Total: $" + total.toLocaleString("es-CL");
+    }
+
+    document.getElementById("precioPlato").addEventListener("input", calcularTotal);
+    document.getElementById("precioExtra").addEventListener("input", calcularTotal);
+    document.getElementById("agregarPlato").addEventListener("click", () => setTimeout(calcularTotal, 100));
+
+    cargarPedidos();
+    cargarStock();
+  </script>
+</head>
+<body class="bg-gray-100 p-4">
+  <h1 class="text-3xl font-bold mb-4 text-center">Admin - Foodtruck Mamma Ia 🍝</h1>
+  <form id="pedidoForm" class="bg-white p-4 rounded shadow mb-4 max-w-xl mx-auto">
+    <h2 class="text-lg font-bold mb-2">Agregar Pedido</h2>
+    <input id="precioPlato" type="number" value="6000" placeholder="Precio por plato" class="border p-2 w-full mb-2" />
+    <input id="extraProducto" type="text" placeholder="Producto extra (ej: agua)" class="border p-2 w-full mb-2" />
+    <input id="precioExtra" type="number" placeholder="Precio extra (ej: 1000)" class="border p-2 w-full mb-2" />
+    <div id="totalPedido" class="text-right font-bold text-lg mb-2">Total: $0</div>
+    <select name="pasta" class="border p-2 w-full mb-2">
+      <option>spaguetti</option>
+      <option>fettuccine</option>
+      <option>pappardelle</option>
+    </select>
+    <select name="tipo" class="border p-2 w-full mb-2">
+      <option>huevo</option>
+      <option>espinaca</option>
+      <option>betarraga</option>
+    </select>
+    <select name="salsa" class="border p-2 w-full mb-2">
+      <option>pomodoro</option>
+      <option>alfredo champiñón</option>
+      <option>alfredo tocino</option>
+      <option>alfredo queso azul y parmesano</option>
+      <option>all'amatriciana</option>
+      <option>bolognesa</option>
+      <option>bolognesa rosa</option>
+      <option>all'arrabiata</option>
+      <option>all'vodka</option>
+    </select>
+    <input type="text" name="extra" class="border p-2 w-full mb-2" placeholder="Comentario (ej: sin queso)" />
+    <button type="button" id="agregarPlato" class="bg-green-600 text-white px-4 py-2 rounded mb-2">Agregar Plato</button>
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Guardar Pedido</button>
+  </form>
+  <ul id="listaPlatos" class="max-w-xl mx-auto mb-4 list-disc pl-5"></ul>
+  <div id="stockDiv" class="max-w-xl mx-auto mb-6"></div>
+  <div id="pedidosDiv" class="max-w-xl mx-auto"></div>
+</body>
+</html>
