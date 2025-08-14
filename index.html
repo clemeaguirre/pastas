@@ -2,10 +2,21 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="0; URL='https://raw.githubusercontent.com/clemeaguirre/pastas/77b30de9abd7e784a8c163f66905d5df5383bde7/Menu%CC%81%20pasta%20(1).png'">
+    <script>
+        // Genera un parámetro único basado en la fecha/hora actual
+        const timestamp = new Date().getTime();
+        const imageUrl = `https://raw.githubusercontent.com/clemeaguirre/pastas/main/Menu%CC%81%20pasta%20(1).png?v=${timestamp}`;
+        window.location.href = imageUrl;
+    </script>
     <title>Redireccionando...</title>
 </head>
 <body>
-    <p>Si no eres redirigido, haz clic <a href="https://raw.githubusercontent.com/clemeaguirre/pastas/77b30de9abd7e784a8c163f66905d5df5383bde7/Menu%CC%81%20pasta%20(1).png">aquí</a>.</p>
+    <p>Si no eres redirigido, haz clic 
+       <a id="link" href="#">aquí</a>.
+    </p>
+    <script>
+        // También actualiza el enlace visible
+        document.getElementById('link').href = `https://raw.githubusercontent.com/clemeaguirre/pastas/main/Menu%CC%81%20pasta%20(1).png?v=${timestamp}`;
+    </script>
 </body>
 </html>
